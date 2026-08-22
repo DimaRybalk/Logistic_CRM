@@ -1,24 +1,24 @@
 services:
-  # База данных PostgreSQL в контейнере
+  # ==========================================
+  # 1. TODO MICROSERVICE
+  # ==========================================
   todo_db:
     image: postgres:16-alpine
     container_name: todo_postgres
     restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: mysecretpassword
-      POSTGRES_DB: todo_db
+    env_file:
+      - ./todo_microservice/.env
     ports:
       - "5432:5432"
     volumes:
       - todo_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d todo_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
-  # Приложение FastAPI
   todo_app:
     build: ./todo_microservice
     container_name: todo_service
@@ -26,13 +26,49 @@ services:
     depends_on:
       todo_db:
         condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:mysecretpassword@todo_db:5432/todo_db
+    env_file:
+      - ./todo_microservice/.env
     ports:
       - "8001:8000"
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
+  # ==========================================
+  # 2. AUTH MICROSERVICE
+  # ==========================================
+  auth_db:
+    image: postgres:16-alpine
+    container_name: auth_postgres
+    restart: always
+    env_file:
+      - ./auth_microservice/.env
+    ports:
+      - "5434:5432"
+    volumes:
+      - auth_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  auth_app:
+    build: ./auth_microservice
+    container_name: auth_service
+    restart: always
+    depends_on:
+      auth_db:
+        condition: service_healthy
+    env_file:
+      - ./auth_microservice/.env
+    ports:
+      - "8002:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
 volumes:
   todo_pgdata:
+  auth_pgdata:
