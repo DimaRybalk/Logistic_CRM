@@ -27,6 +27,7 @@ class UpdateUser(BaseModel):
     first_name: Optional[str] = Field(None, min_length=1, max_length=100)
     last_name: Optional[str] = Field(None, min_length=1, max_length=100)
 
+
 class LoginUser(BaseModel):
     email: EmailStr = Field(...)
     password: str = Field(...)
@@ -47,6 +48,20 @@ class TokenPayload(BaseModel):
     company_id: int
     role: RoleEnum
     exp: int
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6, max_length=128)
 
 
 # _____________________________________________________________________________
@@ -105,6 +120,10 @@ class CompanyMember(CompanyMemberBase):
 class UpdateCompanyMember(BaseModel):
     role: RoleEnum | None = None
     is_active: bool | None = None
+
+
+class UpdateMemberRole(BaseModel):
+    role: RoleEnum
 
 
 # ____________________________________________________________

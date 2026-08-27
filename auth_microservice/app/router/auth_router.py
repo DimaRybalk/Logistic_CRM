@@ -10,6 +10,8 @@ from app.schemas import (
     RefreshTokenRequest,
     Token,
     User,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 from app.security import (
     ALGORITHM,
@@ -18,6 +20,8 @@ from app.security import (
     create_refresh_token,
     hash_password,
     verify_password,
+    create_password_reset_token,
+    verify_password_reset_token,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -166,3 +170,47 @@ async def receiving_refresh_token(
         refresh_token=refresh_token,
         token_type="bearer",
     )
+
+
+@router.post("/forgot_password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(UserModel).where(
+        UserModel.email == data.email, UserModel.is_active == True
+    )
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if user:
+        reset_token = create_password_reset_token(user.email)
+
+        print(f"Reset Link: https://yourapp.com/reset-password?token={reset_token}")
+
+    return {
+        "message": "If this email is registered, a password reset link has been sent."
+    }
+
+
+@router.post("/reset_password")
+async def reset_password(
+    data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)
+):
+    email = verify_password_reset_token(data.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+
+    query = select(UserModel).where(
+        UserModel.email == email, UserModel.is_active == True
+    )
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.hashed_password = hash_password(data.new_password)
+    await db.commit()
+
+    return {"message": "Password has been successfully reset"}
