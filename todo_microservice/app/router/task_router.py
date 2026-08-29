@@ -9,7 +9,7 @@ from app.schemas import CreateTask, Task, UpdateTask
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-@router.get("/", response_model=list[Task])
+@router.get("", response_model=list[Task])
 async def get_all_tasks(db: AsyncSession = Depends(get_db)):
     query = select(TaskModel).order_by(TaskModel.id).offset(0).limit(10)
     result = await db.execute(query)
@@ -32,7 +32,7 @@ async def get_task_by_id(task_id: int, db: AsyncSession = Depends(get_db)):
     return task
 
 
-@router.post("/", response_model=Task, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=Task, status_code=status.HTTP_201_CREATED)
 async def add_task(task_in: CreateTask, db: AsyncSession = Depends(get_db)):
     new_task = TaskModel(**task_in.model_dump())
     db.add(new_task)

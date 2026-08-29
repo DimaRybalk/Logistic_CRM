@@ -27,7 +27,7 @@ from app.security import hash_password
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
 
-@router.get("/my", response_class=Company)
+@router.get("/my", response_model=Company)
 async def get_my_company(
     user_data: tuple = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -84,7 +84,7 @@ async def update_my_company(
             )
 
         for key, value in updated_data.items():
-            setattr(user, key, value)
+            setattr(company, key, value)
 
         await db.commit()
         await db.refresh(company)

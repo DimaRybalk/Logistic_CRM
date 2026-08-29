@@ -27,7 +27,7 @@ from app.security import (
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.post("/register", response_model=User)
+@router.post("/register", response_model=User, status_code=201)
 async def register_company_with_owner(
     data: CompanyRegister, db: AsyncSession = Depends(get_db)
 ):
