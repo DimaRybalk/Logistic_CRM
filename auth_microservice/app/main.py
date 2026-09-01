@@ -6,6 +6,17 @@ import time
 from fastapi.responses import JSONResponse
 from app.router import auth_router, user_router, company_router
 import logging
+from app.redis_client import redis_client
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    yield
+
+    await redis_client.close()
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app.middleware")
 
-app = FastAPI(title="Auth Microservice")
+app = FastAPI(title="Auth Microservice", lifespan=lifespan)
 
 app.include_router(auth_router.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(user_router.router, prefix="/api/v1", tags=["Users"])

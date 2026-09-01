@@ -1,3 +1,4 @@
+import json
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +24,8 @@ from app.schemas import (
     InviteAccept,
 )
 from app.security import hash_password
+import redis.asyncio as aioredis
+from app.redis_client import get_redis
 
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
@@ -31,8 +34,14 @@ router = APIRouter(prefix="/companies", tags=["Companies"])
 async def get_my_company(
     user_data: tuple = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     _, company_id, _ = user_data
+    cache_key = f"company:{company_id}"
+
+    cached_company = await redis.get(cache_key)
+    if cached_company:
+        return json.loads(cached_company)
 
     query = select(CompanyModel).where(
         CompanyModel.id == company_id, CompanyModel.is_active == True
@@ -45,8 +54,9 @@ async def get_my_company(
             status_code=404,
             detail="Company not found or inactive",
         )
-
-    return company
+    company_data = Company.model_validate(company).model_dump(mode="json")
+    await redis.set(cache_key, json.dumps(company_data), ex=600)
+    return company_data
 
 
 @router.patch("/my", response_model=Company)
@@ -54,6 +64,7 @@ async def update_my_company(
     new_data: UpdateCompany,
     user_data: tuple = Depends(require_role(RoleEnum.OWNER)),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     user, company_id, _ = user_data
     updated_data = new_data.model_dump(exclude_unset=True)
@@ -83,21 +94,28 @@ async def update_my_company(
                 detail="Company with this name already exists",
             )
 
-        for key, value in updated_data.items():
-            setattr(company, key, value)
-
-        await db.commit()
-        await db.refresh(company)
-
-        return company
+    for key, value in updated_data.items():
+        setattr(company, key, value)
+    await db.commit()
+    await db.refresh(company)
+    await redis.delete(f"company:{company.id}")
+    await redis.delete(f"company:{company.id}:members")
+    return company
 
 
 @router.get("/members", response_model=list[User])
 async def get_company_members(
     user_data: tuple = Depends(require_role(RoleEnum.OWNER)),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     _, company_id, _ = user_data
+    cache_key = f"company:{company_id}:members"
+
+    cached_members = await redis.get(cache_key)
+    if cached_members:
+        return json.loads(cached_members)
+
     query = (
         select(UserModel)
         .join(CompanyMemberModel, CompanyMemberModel.user_id == UserModel.id)
@@ -109,7 +127,12 @@ async def get_company_members(
     result = await db.execute(query)
     members = result.scalars().all()
 
-    return members
+    members_data = [
+        User.model_validate(member).model_dump(mode="json") for member in members
+    ]
+    await redis.set(cache_key, json.dumps(members_data), ex=600)
+
+    return members_data
 
 
 @router.get("/members/{member_id}", response_model=User)
@@ -117,8 +140,15 @@ async def get_company_member(
     member_id: int,
     user_data: tuple = Depends(require_role(RoleEnum.OWNER)),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     _, company_id, _ = user_data
+    cache_key = f"company:{company_id}:member:{member_id}"
+
+    cached_member = await redis.get(cache_key)
+    if cached_member:
+        return json.loads(cached_member)
+
     query = (
         select(UserModel)
         .join(CompanyMemberModel, CompanyMemberModel.user_id == UserModel.id)
@@ -133,6 +163,9 @@ async def get_company_member(
     if not member:
         raise HTTPException(status_code=404, detail="User not found")
 
+    members_data = User.model_validate(member).model_dump(mode="json")
+    await redis.set(cache_key, json.dumps(members_data), ex=600)
+
     return member
 
 
@@ -142,6 +175,7 @@ async def change_member_role(
     new_role: UpdateMemberRole,
     user_data: tuple = Depends(require_role(RoleEnum.OWNER)),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     user, company_id, _ = user_data
     update_role = new_role.model_dump(exclude_unset=True)
@@ -169,6 +203,9 @@ async def change_member_role(
     await db.commit()
     await db.refresh(member)
 
+    await redis.delete(f"company:{company_id}:members")
+    await redis.delete(f"company:{company_id}:member:{member_id}")
+
     return {
         "message": "Role updated successfully",
         "member_id": member.user_id,
@@ -181,6 +218,7 @@ async def delete_member_from_company(
     member_id: int,
     user_data: tuple = Depends(require_role(RoleEnum.OWNER)),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     user, company_id, _ = user_data
     if member_id == user.id:
@@ -202,6 +240,10 @@ async def delete_member_from_company(
 
     member.is_active = False
     await db.commit()
+
+    await redis.delete(f"company:{company_id}:members")
+    await redis.delete(f"company:{company_id}:member:{member_id}")
+    await redis.delete(f"user:{member_id}")
 
     return {"message": "Member successfully deleted", "member_id": member.user_id}
 
@@ -265,7 +307,11 @@ async def send_invite(
 
 
 @router.post("/accept_invite")
-async def accept_invite(data: InviteAccept, db: AsyncSession = Depends(get_db)):
+async def accept_invite(
+    data: InviteAccept,
+    db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
+):
     query = select(CompanyInviteModel).where(
         CompanyInviteModel.token == data.token, CompanyInviteModel.is_accepted == False
     )
@@ -298,5 +344,5 @@ async def accept_invite(data: InviteAccept, db: AsyncSession = Depends(get_db)):
 
     invite.is_accepted = True
     await db.commit()
-
+    await redis.delete(f"company:{invite.company_id}:members")
     return {"message": "Invite successfully accepted"}

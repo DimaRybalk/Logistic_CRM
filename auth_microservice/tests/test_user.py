@@ -1,7 +1,9 @@
+import json
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-
+import redis.asyncio as aioredis
 from app.models import CompanyMemberModel, UserModel
 from app.security import verify_password
 
@@ -181,3 +183,46 @@ async def test_logout(
         response.json()["message"]
         == "Successfully logged out. Please remove your access token on the client."
     )
+
+
+@pytest.mark.asyncio
+async def test_get_me_cache(
+    client: AsyncClient,
+    auth_headers: dict,
+    fixture_user: UserModel,
+    fixture_redis_client: aioredis.Redis,
+):
+    cache_key = f"user:{fixture_user.id}"
+
+    await fixture_redis_client.delete(cache_key)
+    assert await fixture_redis_client.get(cache_key) is None
+
+    response = await client.get(USERS_ME_URL, headers=auth_headers)
+    assert response.status_code == 200
+
+    cached_raw = await fixture_redis_client.get(cache_key)
+    assert cached_raw is not None
+    cached_data = json.loads(cached_raw)
+    assert cached_data["email"] == fixture_user.email
+
+    response_cached = await client.get(USERS_ME_URL, headers=auth_headers)
+
+    assert response_cached.status_code == 200
+    assert response_cached.json()["email"] == fixture_user.email
+
+
+@pytest.mark.asyncio
+async def test_logout(
+    client: AsyncClient,
+    auth_headers: dict,
+    fixture_user: UserModel,
+    fixture_redis_client: aioredis.Redis,
+):
+    token = auth_headers["Authorization"].split(" ")[1]
+    blacklist_key = f"blacklist:{token}"
+
+    logout_response = await client.post(LOGOUT_URL, headers=auth_headers)
+    assert logout_response.status_code == 200
+
+    is_revoked = await fixture_redis_client.get(blacklist_key)
+    assert is_revoked == "revoked"

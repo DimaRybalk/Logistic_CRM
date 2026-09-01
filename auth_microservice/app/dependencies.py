@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import RoleEnum, UserModel
 from app.security import ALGORITHM, SECRET_KEY
+import redis.asyncio as aioredis
+from app.redis_client import get_redis
 
 security = HTTPBearer()
 
@@ -14,6 +16,7 @@ security = HTTPBearer()
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
 
     token = credentials.credentials
@@ -25,6 +28,12 @@ async def get_current_user(
             status_code=401,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    is_blacklisted = await redis.get(f"blacklist:{token}")
+    if is_blacklisted:
+        raise HTTPException(
+            status_code=401, detail="Token has been revoked. Please log in again."
         )
 
     token_type = payload.get("type")

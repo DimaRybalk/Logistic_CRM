@@ -6,15 +6,27 @@ import time
 from fastapi.responses import JSONResponse
 from app.router import task_router
 import logging
+from app.redis_client import redis_client
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    yield
+
+    await redis_client.close()
+
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 
+
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="To-Do CRM")
+app = FastAPI(title="To-DO CRM", lifespan=lifespan)
 
 
 app.include_router(task_router.router, prefix="/api/v1")

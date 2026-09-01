@@ -1,3 +1,4 @@
+import os
 import uuid
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-
+import redis.asyncio as aioredis
 from app.database import Base, get_db
 from app.main import app
 from app.models import (
@@ -17,8 +18,13 @@ from app.models import (
     UserModel,
 )
 from app.security import create_access_token, hash_password
+from app.redis_client import get_redis
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+REDIS_NAME = os.getenv("REDIS_NAME")
+REDIS_PORT = os.getenv("REDIS_PORT")
+REDIS_HOST = os.getenv("REDIS_HOST")
+
 
 engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestingSessionLocal = async_sessionmaker(
@@ -39,11 +45,15 @@ async def db_session():
 
 
 @pytest_asyncio.fixture(scope="function")
-async def client(db_session: AsyncSession):
+async def client(db_session: AsyncSession, fixture_redis_client: aioredis.Redis):
     async def override_get_db():
         yield db_session
 
+    async def override_get_redis():
+        return fixture_redis_client
+
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis] = override_get_redis
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -126,3 +136,23 @@ async def fixture_invite(
     await db_session.commit()
     await db_session.refresh(invite)
     return invite
+
+
+@pytest_asyncio.fixture(scope="function")
+async def fixture_redis_client():
+    if not all([REDIS_NAME, REDIS_PORT, REDIS_HOST]):
+        raise RuntimeError(
+            "Missing required Redis environment variables: REDIS_NAME, REDIS_PORT,"
+            " REDIS_HOST"
+        )
+
+    client = aioredis.from_url(
+        f"{REDIS_NAME}://{REDIS_HOST}:{REDIS_PORT}/0", decode_responses=True
+    )
+
+    await client.flushdb()
+
+    yield client
+
+    await client.flushdb()
+    await client.aclose()

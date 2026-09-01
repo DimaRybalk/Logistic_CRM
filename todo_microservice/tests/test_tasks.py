@@ -1,6 +1,8 @@
 ﻿import pytest
 from httpx import AsyncClient
 from app.models import TaskModel
+import redis.asyncio as aioredis
+import json
 
 BASE_TASKS_URL = "/api/v1/tasks"
 
@@ -72,3 +74,73 @@ async def test_create_task(client: AsyncClient):
     assert get_response.status_code == 200
     new_task_data = get_response.json()
     assert new_task_data["title"] == "new task"
+
+
+@pytest.mark.asyncio
+async def test_get_all_tasks_cache(
+    client: AsyncClient, fixture_task: TaskModel, fixture_redis_client: aioredis.Redis
+):
+
+    cache_key = "tasks:all:limit=10:offset=0"
+    assert await fixture_redis_client.get(cache_key) is None
+
+    response = await client.get(BASE_TASKS_URL)
+    assert response.status_code == 200
+
+    cached_raw = await fixture_redis_client.get(cache_key)
+    assert cached_raw is not None
+
+
+@pytest.mark.asyncio
+async def test_get_task_by_id_cache(
+    client: AsyncClient,
+    fixture_task: TaskModel,
+    fixture_redis_client: aioredis.Redis,
+):
+    cache_key = f"task:{fixture_task.id}"
+    assert await fixture_redis_client.get(cache_key) is None
+
+    response = await client.get(f"{BASE_TASKS_URL}/{fixture_task.id}")
+    assert response.status_code == 200
+
+    cached_raw = await fixture_redis_client.get(cache_key)
+    assert cached_raw is not None
+
+
+@pytest.mark.asyncio
+async def test_create_task_invalidates_list_cache(
+    client: AsyncClient,
+    fixture_task: TaskModel,
+    fixture_redis_client: aioredis.Redis,
+):
+    cache_key = "tasks:all:limit=10:offset=0"
+    await client.get(BASE_TASKS_URL)
+    assert await fixture_redis_client.get(cache_key) is not None
+
+    new_task = {
+        "title": "Brand New Task",
+        "description": "Task created for testing cache invalidation",
+    }
+    post_response = await client.post(BASE_TASKS_URL, json=new_task)
+    assert post_response.status_code == 201
+    assert await fixture_redis_client.get(cache_key) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_task_invalidates_both_caches(
+    client: AsyncClient,
+    fixture_task: TaskModel,
+    fixture_redis_client: aioredis.Redis,
+):
+    task_cache_key = f"task:{fixture_task.id}"
+    list_cache_key = "tasks:all:limit=10:offset=0"
+
+    await client.get(f"{BASE_TASKS_URL}/{fixture_task.id}")
+    await client.get(BASE_TASKS_URL)
+    assert await fixture_redis_client.get(task_cache_key) is not None
+    assert await fixture_redis_client.get(list_cache_key) is not None
+
+    delete_res = await client.delete(f"{BASE_TASKS_URL}/{fixture_task.id}")
+    assert delete_res.status_code == 204
+    assert await fixture_redis_client.get(task_cache_key) is None
+    assert await fixture_redis_client.get(list_cache_key) is None
