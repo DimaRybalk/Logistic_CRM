@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("app.middleware")
 
-app = FastAPI(title="Auth Microservice", lifespan=lifespan)
+app = FastAPI(title="Auth Microservice", lifespan=lifespan, root_path="/api/auth",)
 
 app.include_router(auth_router.router, prefix="/api/v1", tags=["Auth"])
 app.include_router(user_router.router, prefix="/api/v1", tags=["Users"])

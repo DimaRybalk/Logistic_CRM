@@ -9,6 +9,7 @@ from app.main import app
 from app.models import TaskModel
 import redis.asyncio as aioredis
 from app.redis_client import get_redis
+from app.auth import get_current_user, CurrentUser
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 REDIS_NAME = os.getenv("REDIS_NAME")
@@ -33,6 +34,9 @@ async def db_session():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+MOCK_USER = CurrentUser(user_id=1, company_id=1)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession, fixture_redis_client: aioredis.Redis):
     async def override_get_db():
@@ -41,8 +45,12 @@ async def client(db_session: AsyncSession, fixture_redis_client: aioredis.Redis)
     async def override_get_redis():
         return fixture_redis_client
 
+    async def override_get_current_user():
+        return MOCK_USER
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis] = override_get_redis
+    app.dependency_overrides[get_current_user] = override_get_current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -57,6 +65,8 @@ async def fixture_task(db_session: AsyncSession) -> TaskModel:
         title="Купить сервер",
         description="Для деплоя CRM",
         is_completed=False,
+        user_id=MOCK_USER.user_id,
+        company_id=MOCK_USER.company_id,
     )
     db_session.add(task)
     await db_session.commit()

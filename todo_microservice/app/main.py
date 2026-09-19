@@ -26,7 +26,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="To-DO CRM", lifespan=lifespan)
+app = FastAPI(title="To-DO CRM", lifespan=lifespan,root_path="/api/todos")
 
 
 app.include_router(task_router.router, prefix="/api/v1")

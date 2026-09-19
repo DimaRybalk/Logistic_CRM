@@ -3,6 +3,7 @@ from httpx import AsyncClient
 from app.models import TaskModel
 import redis.asyncio as aioredis
 import json
+from sqlalchemy.ext.asyncio import AsyncSession
 
 BASE_TASKS_URL = "/api/v1/tasks"
 
@@ -81,7 +82,7 @@ async def test_get_all_tasks_cache(
     client: AsyncClient, fixture_task: TaskModel, fixture_redis_client: aioredis.Redis
 ):
 
-    cache_key = "tasks:all:limit=10:offset=0"
+    cache_key = "company:1:user:1:tasks:limit=10:offset=0"
     assert await fixture_redis_client.get(cache_key) is None
 
     response = await client.get(BASE_TASKS_URL)
@@ -97,7 +98,7 @@ async def test_get_task_by_id_cache(
     fixture_task: TaskModel,
     fixture_redis_client: aioredis.Redis,
 ):
-    cache_key = f"task:{fixture_task.id}"
+    cache_key = f"company:1:user:1:task:{fixture_task.id}"
     assert await fixture_redis_client.get(cache_key) is None
 
     response = await client.get(f"{BASE_TASKS_URL}/{fixture_task.id}")
@@ -113,7 +114,7 @@ async def test_create_task_invalidates_list_cache(
     fixture_task: TaskModel,
     fixture_redis_client: aioredis.Redis,
 ):
-    cache_key = "tasks:all:limit=10:offset=0"
+    cache_key = "company:1:user:1:tasks:limit=10:offset=0"
     await client.get(BASE_TASKS_URL)
     assert await fixture_redis_client.get(cache_key) is not None
 
@@ -132,8 +133,8 @@ async def test_delete_task_invalidates_both_caches(
     fixture_task: TaskModel,
     fixture_redis_client: aioredis.Redis,
 ):
-    task_cache_key = f"task:{fixture_task.id}"
-    list_cache_key = "tasks:all:limit=10:offset=0"
+    task_cache_key = f"company:1:user:1:task:{fixture_task.id}"
+    list_cache_key = "company:1:user:1:tasks:limit=10:offset=0"
 
     await client.get(f"{BASE_TASKS_URL}/{fixture_task.id}")
     await client.get(BASE_TASKS_URL)
@@ -144,3 +145,27 @@ async def test_delete_task_invalidates_both_caches(
     assert delete_res.status_code == 204
     assert await fixture_redis_client.get(task_cache_key) is None
     assert await fixture_redis_client.get(list_cache_key) is None
+
+@pytest.mark.asyncio
+async def test_show_other_user_task_forbidden(client: AsyncClient, fixture_task: TaskModel, db_session: AsyncSession):
+    task1 = fixture_task
+    task2 = TaskModel(
+        title="Чужая задача",
+        description="Секретные данные чужой компании",
+        is_completed=False,
+        company_id=2,
+        user_id=2,
+    )
+    db_session.add(task2)
+    await db_session.commit()
+    await db_session.refresh(task2)
+
+    response = await client.get(BASE_TASKS_URL)
+    assert response.status_code == 200
+    task_ids = [item["id"] for item in response.json()]
+
+    assert task1.id in task_ids
+    assert task2.id not in task_ids
+
+    bad_response = await client.get(f'{BASE_TASKS_URL}/{task2.id}')
+    assert bad_response.status_code == 404

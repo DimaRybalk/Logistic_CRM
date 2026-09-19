@@ -13,6 +13,7 @@ from app.schemas import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
 )
+# from app.rabbitmq import publish_event
 from app.security import (
     ALGORITHM,
     SECRET_KEY,
@@ -23,6 +24,7 @@ from app.security import (
     create_password_reset_token,
     verify_password_reset_token,
 )
+
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -69,6 +71,7 @@ async def register_company_with_owner(
 
     await db.commit()
     await db.refresh(new_user)
+    # await publish_event("user.created", {"user_id": new_user.id, "company_id": new_company.id})
 
     return new_user
 
