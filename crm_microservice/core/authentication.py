@@ -9,8 +9,8 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
 
 class TokenUser:
     def __init__(self,payload: dict):
-        self.id = payload.get('user_id')
-        self.company_id = payload.get('company_id')
+        self.id = int(payload.get('user_id') or payload.get("sub"))
+        self.company_id = int(payload.get('company_id'))
         self.role = payload.get('role')
         self.is_authenticated = True
 
@@ -34,8 +34,8 @@ class StatelessJWTAuthentication(BaseAuthentication):
                 JWT_SECRET_KEY,
                 algorithms=[JWT_ALGORITHM]
             )
-            user_id = payload.get("user_id")
-            company_id = payload.get("company_id_id")
+            user_id = payload.get("user_id") or payload.get("sub")
+            company_id = payload.get("company_id")
             if not user_id or not company_id:
                 raise AuthenticationFailed("Невалидный токен: отсутствуют user_id или company_id")
             return (TokenUser(payload), None)

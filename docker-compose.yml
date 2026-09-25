@@ -10,9 +10,11 @@ services:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - crm_static:/var/html/static:ro
     depends_on:
       - todo_app
       - auth_app
+      - crm_app
 
   # ==========================================
   # 2. TODO MICROSERVICE
@@ -143,8 +145,45 @@ services:
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
+  # ==========================================
+  # 4. CRM MICROSERVICE (Django)
+  # ==========================================
+  crm_db:
+    image: postgres:16-alpine
+    container_name: crm_postgres
+    restart: always
+    env_file:
+      - ./crm_microservice/.env
+    volumes:
+      - crm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  crm_app:
+    build: ./crm_microservice
+    container_name: crm_service
+    restart: always
+    depends_on:
+      crm_db:
+        condition: service_healthy
+    env_file:
+      - ./crm_microservice/.env
+    volumes:
+      - ./crm_microservice:/app
+      - crm_static:/app/staticfiles
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
 volumes:
   todo_pgdata:
   auth_pgdata:
+  crm_pgdata:
   redis_todo_data:
   redis_auth_data:
+  crm_static:
