@@ -152,7 +152,6 @@ class Order(models.Model):
     def __str__(self):
         return f"Заявка #{self.id} ({self.client.name if self.client else 'Без клієнта'})"
 
-    # --- Зручні розрахункові поля ---
 
     @property
     def margin(self):
@@ -184,7 +183,7 @@ class Order(models.Model):
 
 
 # ==========================================
-# Точки маршруту (зупинки конкретної заявки)
+# Точки маршруту
 # ==========================================
 
 class OrderStop(models.Model):
