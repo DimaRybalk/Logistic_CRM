@@ -156,7 +156,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "get_border_display",
         read_only = True
     )
-    stops = OrderStopSerializer(many=True, source="stops",required = False)
+    stops = OrderStopSerializer(many=True,required = False)
     class Meta:
         model = Order
         fields = [

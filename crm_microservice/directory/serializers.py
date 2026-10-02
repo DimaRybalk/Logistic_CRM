@@ -133,9 +133,7 @@ class ContactSerializer(serializers.ModelSerializer):
         return value.strip() if value else value
 
 class CargoItemSerializer(serializers.ModelSerializer):
-    cargo_id = serializers.PrimaryKeyRelatedField(
-        queryset = Cargo.objects.all(), source = "cargo", write_only = True
-    )
+    
     cargo_title = serializers.CharField(
         source = "cargo.title", read_only = True
     )
@@ -148,7 +146,6 @@ class CargoItemSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "cargo_title",
-            "cargo_id",
             "name",
             "packaging_type",
             "packaging_type_display",

@@ -3,6 +3,9 @@ import os
 import jwt
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
+
+
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM")
@@ -16,6 +19,17 @@ class TokenUser:
 
     def __str__(self):
         return f"User {self.id} (Company {self.company_id})"
+
+class StatelessJWTScheme(OpenApiAuthenticationExtension):
+    target_class = 'core.authentication.StatelessJWTAuthentication'
+    name = 'BearerAuth'
+
+    def get_security_definition(self, auto_schema):
+        return {
+            'type': 'http',
+            'scheme': 'bearer',
+            'bearerFormat': 'JWT',
+        }
 
 class StatelessJWTAuthentication(BaseAuthentication):
     def authenticate(self, request):
