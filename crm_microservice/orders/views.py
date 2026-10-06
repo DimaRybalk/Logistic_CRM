@@ -3,10 +3,11 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Order
 from .serializers import OrderSerializer
+from core.permissions import IsCompanyMember,IsForwarderPermission,IsOwnerPermission,IsViewerPermission
 
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["status", "manager_name", "client", "carrier", "cargo", "payment_term", "border"]

@@ -14,11 +14,17 @@ class TokenUser:
     def __init__(self,payload: dict):
         self.id = int(payload.get('user_id') or payload.get("sub"))
         self.company_id = int(payload.get('company_id'))
-        self.role = payload.get('role')
+        self.role = str(payload.get('role', '')).upper() or None
         self.is_authenticated = True
 
     def __str__(self):
         return f"User {self.id} (Company {self.company_id})"
+
+    def has_role(self, *roles) -> bool:
+        if not self.role:
+            return False
+        normalized_roles = {str(getattr(r, "value", r)).upper() for r in roles}
+        return self.role in normalized_roles
 
 class StatelessJWTScheme(OpenApiAuthenticationExtension):
     target_class = 'core.authentication.StatelessJWTAuthentication'

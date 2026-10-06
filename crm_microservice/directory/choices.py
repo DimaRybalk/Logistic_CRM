@@ -217,5 +217,5 @@ class OrderStatusChoices(models.TextChoices):
     AT_UNLOADING = "AT_UNLOADING", "На вивантаженні"
     DELIVERED = "DELIVERED", "Доставлено (очікування документів)"
     DOCS_RECEIVED = "DOCS_RECEIVED", "Документи отримано (на оплаті)"
-    PAID = "PAID", "Оплачено / Закрито"
+    CLOSED = "CLOSED", "Закрито"
     CANCELLED = "CANCELLED", "Скасовано"

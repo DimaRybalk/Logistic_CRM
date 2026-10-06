@@ -13,7 +13,7 @@ class RoleEnum(str, Enum):
     DRIVER = "DRIVER"
     ACCOUNTANT = "ACCOUNTANT"
     VIEWER = "VIEWER"
-
+    FORWARDER = "FORWARDER"
 
 class CompanyModel(Base):
     __tablename__ = "companies"
