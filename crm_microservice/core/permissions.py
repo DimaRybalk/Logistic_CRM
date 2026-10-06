@@ -25,6 +25,10 @@ class IsForwarderPermission(permissions.BasePermission):
         if request.method == "DELETE":
             return False
         
+        obj_status = getattr(obj, "status", None)
+        if obj_status == "CLOSED":
+            return False
+        
         user_id = getattr(request.user, "id", None)
         obj_user_id = getattr(obj, "responsible_id", None)
 

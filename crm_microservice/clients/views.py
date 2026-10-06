@@ -3,10 +3,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Counterparty
 from .serializers import CounterpartySerializer
+from core.permissions import IsCompanyMember,IsForwarderPermission,IsOwnerPermission,IsViewerPermission
+
 
 class CounterpartyViewSet(viewsets.ModelViewSet):
     serializer_class = CounterpartySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["is_client", "is_carrier"]

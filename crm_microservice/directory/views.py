@@ -3,10 +3,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import Location,BankingDetail,Contact,Cargo,Vehicle,Trailer
 from .serializers import LocationSerializer,BankingDetailSerializer,ContactSerializer,CargoSerializer,VehicleSerializer,TrailerSerializer
+from core.permissions import IsCompanyMember,IsForwarderPermission,IsOwnerPermission,IsViewerPermission
+
 
 class LocationViewSet(viewsets.ModelViewSet):
     serializer_class = LocationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["country", "city"]
@@ -22,7 +24,7 @@ class LocationViewSet(viewsets.ModelViewSet):
 
 class BankingDetailViewSet(viewsets.ModelViewSet):
     serializer_class = BankingDetailSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["legal_form", "is_default"]
@@ -39,7 +41,8 @@ class BankingDetailViewSet(viewsets.ModelViewSet):
 
 class ContactViewSet(viewsets.ModelViewSet):
     serializer_class = ContactSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission)]
+
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
@@ -72,7 +75,8 @@ class ContactViewSet(viewsets.ModelViewSet):
 
 class CargoViewSet(viewsets.ModelViewSet):
     serializer_class = CargoSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
+
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
@@ -99,7 +103,7 @@ class CargoViewSet(viewsets.ModelViewSet):
 
 class VehicleViewSet(viewsets.ModelViewSet):
     serializer_class = VehicleSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
@@ -132,7 +136,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
 class TrailerViewSet(viewsets.ModelViewSet):
     serializer_class = TrailerSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
