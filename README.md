@@ -1,185 +1,187 @@
-# CRM Platform — Microservices Monorepo
+# Logistics CRM Platform — Microservices Monorepo
 
-A microservices-based backend platform, currently composed of two independent
-FastAPI services. This is an early-stage foundation: the plan is to connect the
-services behind a shared entry point, add Celery for background/async work, and
-build the core CRM domain logic on top.
+A multi-tenant backend platform for freight forwarding companies. It is built as three independent services behind a single Nginx gateway, with stateless JWT authentication shared between them.
 
-## Current status
+## Architecture
 
-🚧 **Pre-integration.** Each service currently runs and is tested independently.
-They are not yet wired together (no shared gateway, no inter-service auth
-validation, no message broker). See [Roadmap](#roadmap) below.
+```
+                    ┌────────────────────────┐
+   Client  ───────► │  Nginx gateway (:80)   │
+                    └───────────┬────────────┘
+        /api/auth/   │   /api/todos/   │   /api/crm/, /admin/
+                     ▼                 ▼                 ▼
+            ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+            │ auth_app       │ │ todo_app       │ │ crm_app        │
+            │ FastAPI        │ │ FastAPI        │ │ Django + DRF   │
+            └───┬───────┬────┘ └───┬───────┬────┘ └───────┬────────┘
+                │       │          │       │              │
+           Postgres   Redis    Postgres   Redis        Postgres
+                                          │
+                              Celery worker + beat ──► Mailpit (SMTP)
+```
 
-## Services
+| Service | Stack | Purpose |
+|---|---|---|
+| `auth_microservice` | FastAPI, async SQLAlchemy 2.0, Alembic, Redis | Registration, login, JWT, companies, members, invites |
+| `todo_microservice` | FastAPI, async SQLAlchemy 2.0, Alembic, Redis, Celery | Personal task list with deadline reminders |
+| `crm_microservice` | Django 5, Django REST Framework, drf-spectacular | Core logistics CRM: counterparties, directory, orders |
+| `nginx` | Nginx | Single entry point, routes requests to services |
+
+### How authentication works
+
+1. A user logs in via `auth_microservice` and receives an **access** and a **refresh** JWT.
+2. The token payload contains `sub` (user id), `company_id` and `role`.
+3. `todo_microservice` and `crm_microservice` **validate the JWT themselves** (stateless, shared secret) — they never call the auth service.
+4. Every record in the CRM and Todo services carries a `company_id`, and every query is filtered by the `company_id` from the token. This gives tenant isolation.
+
+### Roles
+
+`OWNER`, `FORWARDER`, `DISPATCHER`, `DRIVER`, `ACCOUNTANT`, `VIEWER`
+
+CRM access rules:
+
+| Resource | OWNER | FORWARDER | VIEWER | Others |
+|---|---|---|---|---|
+| Counterparties, Contacts, Banking details | full | full | no access | no access |
+| Locations, Cargos, Vehicles, Trailers, Orders | full | full | read-only | no access |
+
+Additionally, a `FORWARDER` can only modify orders they are responsible for, cannot delete, and cannot edit orders with status `CLOSED`.
+
+## Services in detail
 
 ### `auth_microservice`
-Handles authentication, multi-tenant companies, and user/member management.
 
-- **Domain model:** `Company` → `CompanyMember` (with `role`) → `User`,
-  plus `CompanyInvite` for onboarding new members.
-- **Auth:** JWT access + refresh tokens (`PyJWT`), bcrypt password hashing,
-  password-reset flow via short-lived JWT.
-- **Roles:** `OWNER`, `DISPATCHER`, `DRIVER`, `ACCOUNTANT`, `VIEWER`
-  (role-based endpoint guards via `require_role`).
-- **Endpoints:** `/api/v1/auth/*`, `/api/v1/users/*`, `/api/v1/companies/*`.
-- **Caching:** Redis, with cache invalidation on every mutating request
-  (user, company, member list/detail keys).
+- **Domain:** `Company` → `CompanyMember` (with `role`) → `User`, plus `CompanyInvite`.
+- **Auth:** JWT access + refresh tokens (PyJWT), bcrypt hashing, password reset via short-lived JWT, logout via a Redis token blacklist.
+- **Endpoints:** `/api/v1/auth/*`, `/api/v1/users/*`, `/api/v1/companies/*`
+- **Caching:** Redis, invalidated on every mutating request.
 
 ### `todo_microservice`
-A task/CRM-adjacent service, currently a standalone To-Do CRM skeleton.
 
-- **Domain model:** `Task` (title, description, completion state, deadline).
+- **Domain:** `Task` (title, description, completion, deadline), scoped by `user_id` and `company_id`.
 - **Endpoints:** `/api/v1/tasks/*` — full CRUD.
-- **Caching:** Redis, list + detail keys invalidated on create/update/delete.
+- **Caching:** Redis list + detail keys, invalidated on create/update/delete.
+- **Background jobs (Celery, Redis broker):**
+  - email notification when a task is created,
+  - every 5 minutes: reminders for deadlines within the next 30 minutes,
+  - every hour: cleanup of tasks completed more than 48 hours ago.
+- Emails are sent via SMTP to **Mailpit** (a local mail catcher).
 
-### Shared stack (both services)
-- FastAPI + async SQLAlchemy 2.0 (`asyncpg` in prod, `aiosqlite` in tests)
-- Alembic migrations (async-aware `env.py`)
-- Redis for response caching
-- Structured request logging middleware with `X-Request-ID`
-- Pytest + `pytest-asyncio`, `httpx.AsyncClient` against an in-memory SQLite DB
-  and a real (flushed-per-test) Redis instance
-- Dockerized, orchestrated via the root `docker-compose.yml`
+### `crm_microservice`
+
+Apps: `clients`, `directory`, `orders`. All data is scoped by `company_id`.
+
+| Entity | Description |
+|---|---|
+| `Counterparty` | Client and/or carrier company |
+| `Location`, `BankingDetail`, `Contact` | Addresses, bank details (IBAN is normalized), people (drivers, brokers, etc.) |
+| `Cargo` / `CargoItem` | Shipment with items; ADR class, temperature control, auto-calculated volume |
+| `Vehicle`, `Trailer` | Carrier fleet; plate/VIN validation |
+| `Order` / `OrderStop` | Transport order with ordered route stops, prices in two currencies, payment terms, border crossing, status workflow, calculated margin |
+
+- **Endpoints** (prefix `/api/crm/v1/`): `counterparties`, `locations`, `banking-details`, `contacts`, `cargos`, `vehicles`, `trailers`, `orders` — with filtering, search and ordering.
+- **API docs:** Swagger UI at `/api/crm/docs/`, OpenAPI schema at `/api/crm/schema/`.
+- **Admin:** Django admin at `/admin/`.
+- Related objects sent by id (`client_id`, `carrier_id`, `vehicle_id`, …) are validated to belong to the same company (`CompanyScopedPKField`).
 
 ## Repository layout
 
 ```
 .
 ├── auth_microservice/
-│   ├── app/
-│   │   ├── router/        # auth_router, user_router, company_router
-│   │   ├── models.py
-│   │   ├── schemas.py
-│   │   ├── security.py    # JWT + password hashing
-│   │   ├── dependencies.py# get_current_user, require_role
-│   │   ├── database.py
-│   │   └── redis_client.py
+│   ├── app/            # main, models, schemas, security, dependencies, router/
 │   ├── alembic/
-│   ├── tests/
-│   ├── Dockerfile
-│   └── alembic.ini
+│   └── tests/
 ├── todo_microservice/
-│   ├── app/
-│   │   ├── router/         # task_router
-│   │   ├── models.py
-│   │   ├── schemas.py
-│   │   ├── database.py
-│   │   └── redis_client.py
+│   ├── app/            # main, models, schemas, auth, celery_app, celery_tasks, router/
 │   ├── alembic/
-│   ├── tests/
-│   ├── Dockerfile
-│   └── alembic.ini
+│   └── tests/
+├── crm_microservice/
+│   ├── core/           # settings/, urls, authentication, permissions, fields, factories
+│   ├── clients/
+│   ├── directory/      # models, choices, serializers, views, tests/
+│   └── orders/
+├── nginx/nginx.conf
 └── docker-compose.yml
 ```
 
 ## Getting started
 
 ### Prerequisites
-- Docker + Docker Compose
-- A `.env` file in each service directory (`auth_microservice/.env`,
-  `todo_microservice/.env`) — see [Environment variables](#environment-variables)
-- A running Redis instance reachable by both services (not yet included in
-  `docker-compose.yml` — see Roadmap)
 
-### Run with Docker Compose
+- Docker + Docker Compose
+- A `.env` file in each service directory: `auth_microservice/.env`, `todo_microservice/.env`, `crm_microservice/.env`
+
+### Run everything
 
 ```bash
 docker compose up --build
 ```
 
-This starts:
-- `auth_db` (Postgres) on host port `5434`
-- `auth_app` on host port `8002`
-- `todo_db` (Postgres) on host port `5432`
-- `todo_app` on host port `8001`
+This starts the gateway, three Postgres databases, two Redis instances, the three application services, the Celery worker and beat, and Mailpit. Migrations run automatically on start.
 
-Migrations run automatically on container start (`alembic upgrade head`).
+| What | URL |
+|---|---|
+| Gateway (all APIs) | `http://localhost` |
+| Auth API | `http://localhost/api/auth/` |
+| Todo API | `http://localhost/api/todos/` |
+| CRM API | `http://localhost/api/crm/v1/` |
+| CRM Swagger | `http://localhost/api/crm/docs/` |
+| Django admin | `http://localhost/admin/` |
+| Mailpit (caught emails) | `http://localhost:8025` |
 
-### Run a service locally (without Docker)
-
-```bash
-cd auth_microservice        # or todo_microservice
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload
-```
+Databases and Redis are not exposed on the host; only Nginx (`80`) and Mailpit (`8025`) are.
 
 ### Run tests
 
+**Auth and Todo** (SQLite in memory + a real Redis, flushed per test):
+
 ```bash
-cd auth_microservice        # or todo_microservice
+cd auth_microservice      # or todo_microservice
+pip install -r requirements.txt
 pytest
 ```
 
-Tests use an in-memory SQLite database and a real Redis instance (flushed
-before/after each test), so `REDIS_NAME`, `REDIS_HOST`, and `REDIS_PORT` must
-be set even when running tests.
+`REDIS_NAME`, `REDIS_HOST` and `REDIS_PORT` must be set. Auth also needs `SECRET_KEY`.
+
+**CRM** (pytest-django + factory_boy, PostgreSQL):
+
+```bash
+cd crm_microservice
+pip install -r requirements.txt
+pytest
+```
+
+The database variables and `JWT_SECRET_KEY` / `JWT_ALGORITHM` must be set.
 
 ## Environment variables
 
-Each service reads from its own `.env` file.
-
-| Variable | Used for | Example |
+| Variable | Service | Purpose |
 |---|---|---|
-| `DATABASE_URL` | full DB connection string (overrides individual `DB_*` vars) | `postgresql+asyncpg://user:pass@host:5432/db` |
-| `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT` / `DB_NAME` | fallback DB config if `DATABASE_URL` not set | |
-| `REDIS_NAME` | Redis URL scheme | `redis` |
-| `REDIS_HOST` | Redis host | `localhost` |
-| `REDIS_PORT` | Redis port | `6379` |
-| `SECRET_KEY` *(auth only)* | JWT signing key | — |
-| `ALGORITHM` *(auth only)* | JWT algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` *(auth only)* | access token TTL | `30` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` *(auth only)* | refresh token TTL | `7` |
+| `DATABASE_URL` or `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` | auth, todo | Database connection |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT` | crm | Database connection |
+| `REDIS_NAME`, `REDIS_HOST`, `REDIS_PORT` | auth, todo | Redis connection (`redis`, host, `6379`) |
+| `SECRET_KEY`, `ALGORITHM` | auth, todo | JWT signing key and algorithm (must match between them) |
+| `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` | auth | Token lifetimes (default 30 min / 7 days) |
+| `JWT_SECRET_KEY`, `JWT_ALGORITHM` | crm | Must equal auth's `SECRET_KEY` / `ALGORITHM` |
+| `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` | crm | Django settings |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM` | todo | Email sending (point to Mailpit) |
 
 ## Roadmap
 
-Near-term plan, in order:
-
-1. **Connect the microservices**
-   - Introduce a shared API gateway or direct service-to-service calls
-     for the `todo`/CRM service to validate JWTs issued by `auth_microservice`
-     (shared `SECRET_KEY`/`ALGORITHM`, or a token-introspection endpoint).
-   - Add Redis and a network to `docker-compose.yml` so all services and
-     dependencies come up together with one command.
-   - Decide on a single external port scheme (avoid host-port collisions,
-     e.g. `todo_db` currently binds to `5432`, which collides with a local
-     Postgres install).
-
-2. **Add Celery**
-   - Introduce a broker (Redis, already present, or RabbitMQ) and a Celery
-     worker service per microservice or a shared worker service.
-   - Move non-critical side effects off the request path: sending invite/
-     reset-password emails (currently just `print()`-ed), cache warmup,
-     scheduled/periodic jobs (`celery beat`) for reminders, deadline checks,
-     digesting, etc.
-
-3. **Core CRM logic**
-   - Expand `todo_microservice` (or a new `crm_microservice`) beyond simple
-     tasks into real CRM entities: contacts/leads, deals/pipelines, activity
-     history, assignment to `CompanyMember`s and roles.
-   - Enforce company-scoped data access (tasks/CRM records should belong to
-     a `company_id`, mirroring the auth service's tenancy model).
+- Event-driven communication between services (RabbitMQ). A publisher stub exists in `auth_microservice/app/rabbitmq.py`, but it is **not wired in yet**.
+- Real email sending for invites and password reset (currently printed to logs).
+- Expand `todo_microservice` / CRM with leads, deals and activity history.
+- CI pipeline (tests + flake8) and a production Django settings file.
 
 ## Known issues / hardening backlog
 
-Carried over from a security review of the current codebase — worth
-addressing before or during the integration work above:
-
-- `accept_invite` attaches an invite to an *existing* user account without
-  verifying the requester owns that account (no password/auth check).
-- Password-reset tokens are stateless JWTs with no single-use enforcement —
-  the same reset link can be replayed until it expires.
-- Password reset doesn't revoke previously issued access/refresh tokens.
-- `/auth/refresh` picks the first active company membership rather than the
-  `company_id` embedded in the refresh token, which can silently switch a
-  multi-company user's context.
-- `get_current_user` doesn't re-check that the specific `CompanyMemberModel`
-  referenced by the token is still active, so a removed member stays
-  authorized until their token naturally expires.
-- `todo_microservice`'s task list endpoint caches under a hardcoded
-  `limit=10:offset=0` key with no actual pagination parameters exposed.
+- `accept_invite` attaches an invite to an *existing* user without verifying that the requester owns that account.
+- Password-reset tokens are stateless and can be replayed until they expire; a reset does not revoke existing tokens.
+- `/auth/refresh` picks the first active membership instead of the `company_id` stored in the refresh token.
+- `get_current_user` does not re-check that the member referenced by the token is still active.
+- Token revocation (logout blacklist) exists only in the auth service; Todo and CRM do not check it.
+- Todo task list is cached under a fixed `limit=10:offset=0` key and has no real pagination.
 
 ## License
 
