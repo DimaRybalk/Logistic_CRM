@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, delete
-from app.database import async_session
 from app.models import TaskModel
 import os
 import smtplib
@@ -9,6 +8,10 @@ import logging
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from app.celery_app import celery
+from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from app.database import DB_URL
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,9 @@ SMTP_HOST = os.getenv("SMTP_HOST")
 raw_port = os.getenv("SMTP_PORT")
 SMTP_PORT = int(raw_port) if raw_port else None
 SMTP_FROM = os.getenv("SMTP_FROM")
+
+celery_engine = create_async_engine(DB_URL, poolclass=NullPool)
+celery_session = async_sessionmaker(celery_engine, expire_on_commit=False)
 
 @celery.task(name="send_task_created_notification")
 def send_task_created_notification(
@@ -58,7 +64,7 @@ async def _check_deadlines_async():
     now = datetime.now(timezone.utc)
     target_time = now + timedelta(minutes=30)
 
-    async with async_session() as session:
+    async with celery_session() as session:
         query = select(TaskModel).where(
             TaskModel.is_completed == False,
             TaskModel.is_deadline_notified == False,
@@ -85,19 +91,19 @@ async def _check_deadlines_async():
 
 @celery.task(name="check_upcoming_deadlines")
 def check_upcoming_deadlines():
-    count = asyncio.run(_check_deadlines_async)
+    count = asyncio.run(_check_deadlines_async())
     return f"Checked deadlines. Sent reminders for {count} tasks."
 
 async def _cleanup_completed_tasks_async():
     cut_time = datetime.now(timezone.utc) - timedelta(hours=48)
-    async with async_session() as session:
+    async with celery_session() as session:
         query = delete(TaskModel).where(TaskModel.is_completed == True,
                                         TaskModel.updated_at <= cut_time)
         result = await session.execute(query)
         await session.commit()
         return result.rowcount
 
-@celery.task(name="clean_completed_tasks")
-def clean_completed_taks():
+@celery.task(name="cleanup_completed_tasks")
+def clean_completed_tasks():
     deleted_count = asyncio.run(_cleanup_completed_tasks_async())
     return f"Cleaned up {deleted_count} old completed tasks from personal to-do lists."

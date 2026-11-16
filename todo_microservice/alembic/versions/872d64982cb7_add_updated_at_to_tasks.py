@@ -5,6 +5,7 @@ Revises: aaad255ed9dc
 Create Date: 2026-09-16 21:08:54.852230
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -20,15 +21,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    def upgrade() -> None:
-        op.add_column(
-            'tasks',
-            sa.Column(
-                'updated_at',
-                sa.DateTime(timezone=True),
-                server_default=sa.text('now()'),
-                nullable=False
-            )
+    op.add_column(
+        'tasks',
+        sa.Column(
+            'updated_at',
+            sa.DateTime(timezone=True),
+            server_default=sa.text('now()'),
+            nullable=False
+        )
     )
     # ### end Alembic commands ###
 

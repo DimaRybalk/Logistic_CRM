@@ -1,26 +1,27 @@
 from rest_framework import serializers
 from .models import Counterparty
 from directory.models import Location, BankingDetail, Contact
+from core.fields import CompanyScopedPKField
 
 
 class CounterpartySerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only=True)
 
-    location_id = serializers.PrimaryKeyRelatedField(
+    location_id = CompanyScopedPKField(
         queryset=Location.objects.all(),
         source="location",
         write_only=True,
         required=False,
         allow_null=True,
     )
-    payment_detail_id = serializers.PrimaryKeyRelatedField(
+    payment_detail_id = CompanyScopedPKField(
         queryset=BankingDetail.objects.all(),
         source="payment_details",
         write_only=True,
         required=False,
         allow_null=True,
     )
-    primary_contact_id = serializers.PrimaryKeyRelatedField(
+    primary_contact_id = CompanyScopedPKField(
         queryset=Contact.objects.all(),
         source="primary_contact", 
         write_only=True,

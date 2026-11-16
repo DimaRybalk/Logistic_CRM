@@ -10,7 +10,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated & IsCompanyMember & (IsOwnerPermission | IsForwarderPermission | IsViewerPermission)]
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["status", "manager_name", "client", "carrier", "cargo", "payment_term", "border"]
+    filterset_fields = ["status", "manager_name", "client", "carrier", "cargo", "payments_term", "border"]
     search_fields = ["client__name",
                     "carrier__name",       
                     "cargo__title",        
@@ -31,6 +31,6 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
             user = self.request.user
-            responsible_id = serializer.validated_data.get("responsible_id", user.id)
-            manager_name = serializer.validated_data.get("manager_name", getattr(user, "full_name", user.username))
+            responsible_id = user.id
+            manager_name = serializer.validated_data.get("manager_name")
             serializer.save(company_id=user.company_id, responsible_id=responsible_id, manager_name=manager_name)

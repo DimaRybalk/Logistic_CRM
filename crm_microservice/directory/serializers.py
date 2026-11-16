@@ -5,6 +5,7 @@ from .models import *
 from clients.models import Counterparty
 import re
 from django.db import transaction
+from core.fields import CompanyScopedPKField
 
 class LocationSerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only=True)
@@ -84,7 +85,7 @@ class BankingDetailSerializer(serializers.ModelSerializer):
 class ContactSerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only=True)
     
-    counterparty_id = serializers.PrimaryKeyRelatedField(
+    counterparty_id = CompanyScopedPKField(
         queryset = Counterparty.objects.all(), source="counterparty", write_only=True, required=False, allow_null = False
     )
 
@@ -241,7 +242,7 @@ class CargoSerializer(serializers.ModelSerializer):
 
 class VehicleSerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only=True)
-    carrier_id = serializers.PrimaryKeyRelatedField(
+    carrier_id = CompanyScopedPKField(
             queryset = Counterparty.objects.all(), source="carrier", write_only=True, required=False, allow_null = False
         )
     
@@ -299,7 +300,7 @@ class TrailerSerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only=True)
     
     
-    carrier_id = serializers.PrimaryKeyRelatedField(
+    carrier_id = CompanyScopedPKField(
         queryset=Counterparty.objects.all(),
         source="carrier",
         write_only=True,

@@ -13,7 +13,7 @@ class CounterpartyViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["is_client", "is_carrier"]
     search_fields = ["name"]
-    orderig_fields = ["name","created_at"]
+    ordering_fields = ["name","created_at"]
 
     def get_queryset(self):
         user = self.request.user

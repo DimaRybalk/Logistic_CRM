@@ -28,7 +28,7 @@ class BankingDetailViewSet(viewsets.ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["legal_form", "is_default"]
-    search_fields = ["title", "iban", "tax_number", "bank_name"]
+    search_fields = ["title", "iban", "tax_number"]
     ordering_fields = ["legal_form","title","created_at"]
     ordering = ["-is_default", "title"]
 
@@ -86,7 +86,7 @@ class CargoViewSet(viewsets.ModelViewSet):
     ]
     search_fields = [
         "title",
-        "items__description",
+        "items__name",
     ]
 
     ordering_fields = ["created_at", "title"]

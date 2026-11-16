@@ -54,12 +54,18 @@ class StatelessJWTAuthentication(BaseAuthentication):
                 JWT_SECRET_KEY,
                 algorithms=[JWT_ALGORITHM]
             )
+            if payload.get("type") != "access":
+                raise AuthenticationFailed("Невалідний токен")
+            
             user_id = payload.get("user_id") or payload.get("sub")
             company_id = payload.get("company_id")
             if not user_id or not company_id:
-                raise AuthenticationFailed("Невалидный токен: отсутствуют user_id или company_id")
+                raise AuthenticationFailed("Невалідний токен: відсутній user_id або company_id")
             return (TokenUser(payload), None)
         except jwt.ExpiredSignatureError:
-            raise AuthenticationFailed("Срок действия токена истек")
+            raise AuthenticationFailed("Термін дії токена закінчився")
         except jwt.PyJWTError:
-            raise AuthenticationFailed("Ошибка проверки подписи токена")
+            raise AuthenticationFailed("Помилка перевірки токена")
+
+    def authenticate_header(self, request):
+        return "Bearer"

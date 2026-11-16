@@ -3,17 +3,12 @@ from rest_framework import serializers
 from .models import OrderStop,Order
 from directory.models import *
 from clients.models import Counterparty
+from core.fields import CompanyScopedPKField
 
 class OrderStopSerializer(serializers.ModelSerializer):
     company_id = serializers.IntegerField(read_only = True)
-    order_id = serializers.PrimaryKeyRelatedField(
-        queryset = Order.objects.all(), 
-        source = "order", 
-        write_only = True, 
-        required=False
-    )
-
-    location_id = serializers.PrimaryKeyRelatedField(
+    
+    location_id = CompanyScopedPKField(
         queryset=Location.objects.all(),
         source="location",
         write_only=True,
@@ -32,7 +27,6 @@ class OrderStopSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "company_id",
-            "order_id",
             "location_id",
             "location_title",
             "sequence",
@@ -64,7 +58,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "get_status_display",
         read_only = True
     )
-    client_id = serializers.PrimaryKeyRelatedField(
+    client_id = CompanyScopedPKField(
         queryset = Counterparty.objects.filter(is_client = True),
         source = "client",
         write_only = True,
@@ -75,7 +69,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "client.name",
         read_only = True
     )
-    carrier_id = serializers.PrimaryKeyRelatedField(
+    carrier_id = CompanyScopedPKField(
         queryset = Counterparty.objects.filter(is_carrier = True),
         source = "carrier",
         write_only = True,
@@ -86,7 +80,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "carrier.name",
         read_only = True
     )
-    cargo_id = serializers.PrimaryKeyRelatedField(
+    cargo_id = CompanyScopedPKField(
         queryset = Cargo.objects.all(),
         source = "cargo",
         write_only = True,
@@ -97,7 +91,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "cargo.title",
         read_only = True,
     )
-    vehicle_id = serializers.PrimaryKeyRelatedField(
+    vehicle_id = CompanyScopedPKField(
         queryset = Vehicle.objects.all(),
         source = "vehicle",
         write_only = True,
@@ -108,7 +102,7 @@ class OrderSerializer(serializers.ModelSerializer):
         source = "vehicle.plate_number",
         read_only = True,
     )
-    trailer_id = serializers.PrimaryKeyRelatedField(
+    trailer_id = CompanyScopedPKField(
         queryset = Trailer.objects.all(),
         source = "trailer",
         write_only = True,
@@ -124,7 +118,7 @@ class OrderSerializer(serializers.ModelSerializer):
         read_only = True
     )
 
-    driver_id = serializers.PrimaryKeyRelatedField(
+    driver_id = CompanyScopedPKField(
         queryset = Contact.objects.filter(is_driver=True),
         source = "driver",
         write_only = True,
@@ -212,7 +206,7 @@ class OrderSerializer(serializers.ModelSerializer):
         stops_data = validated_data.pop("stops", [])
         order = Order.objects.create(**validated_data)
         for stop_item in stops_data:
-            OrderStop.objects.create(order = order, **stop_item)
+            OrderStop.objects.create(order = order, **stop_item, company_id = order.company_id)
 
         return order
 
@@ -225,6 +219,6 @@ class OrderSerializer(serializers.ModelSerializer):
         if stops_data is not None:
             instance.stops.all().delete()
             for stop_item in stops_data:
-                OrderStop.objects.create(order=instance, **stop_item)
+                OrderStop.objects.create(order=instance, **stop_item, company_id = instance.company_id)
 
         return instance
