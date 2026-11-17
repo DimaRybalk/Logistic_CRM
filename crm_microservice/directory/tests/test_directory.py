@@ -5,7 +5,7 @@ from django.urls import reverse
 from core.factories import CounterpartyFactory, LocationFactory,BankingDetailFactory,ContactFactory,CargoFactory,CargoItemFactory,VehicleFactory,TrailerFactory
 from rest_framework.test import APIClient
 
-from directory.models import Contact, Location, Cargo, CargoItem, Vehicle
+from directory.models import Contact, Location, Cargo, CargoItem, Trailer, Vehicle
 from .helpers import create_token
 
 # Location
@@ -786,3 +786,174 @@ def test_vehicle_creation_with_others_carrier():
     response = api_client.post(url, data, format="json")
     assert response.status_code == 400
     assert "carrier_id" in response.json()
+
+# Trailer
+
+@pytest.mark.django_db
+def test_show_other_trailer():
+    trailer_other = TrailerFactory(company_id = 2)
+    trailer = TrailerFactory()
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    url = reverse("trailer-list")
+    response = api_client.get(url)
+    assert response.status_code == 200
+    data = response.json()
+    ids = [item["id"] for item in data]
+    assert trailer_other.id not in ids
+    assert trailer.id in ids
+
+@pytest.mark.django_db
+def test_show_other_trailer_by_id():
+    trailer_other = TrailerFactory(company_id = 2)
+    trailer = TrailerFactory()
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    url = reverse("trailer-detail", kwargs={"pk": trailer_other.id})
+    response = api_client.get(url)
+    assert response.status_code == 404
+
+@pytest.mark.django_db
+def test_patch_other_trailer():
+    trailer_other = TrailerFactory(company_id = 2)
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    new_data = {
+        "plate_number": "NEWPLATE1",
+    }
+    url = reverse("trailer-detail", kwargs={"pk": trailer_other.id})
+    response = api_client.patch(url, new_data, format="json")
+    assert response.status_code == 404
+    trailer_other.refresh_from_db()
+    assert trailer_other.plate_number != "NEWPLATE1"
+
+@pytest.mark.django_db
+def test_delete_other_trailer():
+    trailer_other = TrailerFactory(company_id = 2)
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    url = reverse("trailer-detail", kwargs={"pk": trailer_other.id})
+    response = api_client.delete(url)
+    assert response.status_code == 404
+    trailer_other.refresh_from_db()
+    assert trailer_other.company_id == 2
+
+@pytest.mark.django_db
+def test_create_trailer():
+    expected_company_id = 1
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    carrier = CounterpartyFactory(company_id = 1, is_carrier = True)
+    new_data = {
+            "carrier_id": carrier.id,
+            "plate_number": "NEWPLATE1",
+        }
+    url = reverse("trailer-list")
+    response = api_client.post(url, new_data, format="json")
+    assert response.status_code == 201
+    data = response.json()
+    assert data["company_id"] == expected_company_id
+
+@pytest.mark.django_db
+def test_show_trailer_anonymous():
+    trailer_other = TrailerFactory()
+    api_client = APIClient()
+    url = reverse("trailer-list")
+    response = api_client.get(url)
+    assert response.status_code == 401
+
+@pytest.mark.django_db
+def test_trailer_viewer_rights():
+    token = create_token(1, "VIEWER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    trailer = TrailerFactory(company_id = 1)
+    carrier = CounterpartyFactory(company_id = 1, is_carrier = True)
+    new_data = {
+        "carrier_id" : carrier.id,
+        "plate_number": "NEWPLATE1",
+        }
+    url = reverse("trailer-list")
+    response_get = api_client.get(url)
+    assert response_get.status_code == 200
+    response_post = api_client.post(url, new_data, format = "json")
+    assert response_post.status_code == 403
+
+@pytest.mark.django_db
+def test_trailer_driver_rights():
+    token = create_token(1, "DRIVER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    trailer = TrailerFactory()
+    url = reverse("trailer-list")
+    response = api_client.get(url)
+    assert response.status_code == 403
+
+@pytest.mark.django_db
+def test_create_trailer_with_other_carrier():
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    carrier = CounterpartyFactory(company_id = 2, is_carrier = True)
+    new_data = {
+        "carrier_id" : carrier.id,
+        "plate_number": "NEWPLATE1",
+        }
+    url = reverse("trailer-list")
+    response = api_client.post(url,new_data, format="json")
+    assert response.status_code == 400
+    assert "carrier_id" in response.json()
+
+@pytest.mark.django_db
+def test_create_trailer_with_client():
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    carrier = CounterpartyFactory(company_id = 1, is_carrier = False)
+    new_data = {
+        "carrier_id" : carrier.id,
+        "plate_number": "NEWPLATE1",
+        }
+    url = reverse("trailer-list")
+    response = api_client.post(url,new_data, format="json")
+    assert response.status_code == 400
+    assert "carrier_id" in response.json()
+
+@pytest.mark.django_db
+def tests_trailer_plate_number_validation():
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    new_trailer = TrailerFactory(company_id = 1)
+    carrier = CounterpartyFactory(company_id = 1, is_carrier = True )
+    new_data = {
+        "carrier_id": carrier.id,
+        "plate_number": "aa 1234 bb",
+    }
+    url = reverse("trailer-detail",kwargs={"pk": new_trailer.id})
+    response = api_client.patch(url, new_data, format="json")
+    assert response.status_code == 200
+    trailer = Trailer.objects.get(id = new_trailer.id)
+    assert trailer.plate_number == "AA1234BB"
+
+@pytest.mark.django_db
+def test_trailer_capacity_validation():
+    token = create_token(1, "OWNER")
+    api_client = APIClient()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    new_trailer = TrailerFactory(company_id = 1, capacity_pallets = 33)
+    carrier = CounterpartyFactory(company_id = 1, is_carrier = True )
+    new_data = {
+        "carrier_id" : carrier.id,
+        "plate_number" : "AA1234BB",
+        "capacity_pallets": 34
+    }
+    url = reverse("trailer-detail", kwargs={"pk": new_trailer.id})
+    response = api_client.patch(url,new_data, format="json")
+    assert response.status_code == 400
+    assert "capacity_pallets" in response.json()

@@ -359,7 +359,7 @@ class TrailerSerializer(serializers.ModelSerializer):
         if capacity_kg is not None and capacity_kg <= 0:
             raise serializers.ValidationError({"carrying_capacity_kg": "Вантажопідйомність повинна бути більшою за 0."})
 
-        if pallets is not None and (pallets <= 0 or pallets > 66):
-            raise serializers.ValidationError({"capacity_pallets": "Місткість палет зазвичай від 1 до 66 (для двоповерхових причепів)."})
+        if pallets is not None and (pallets <= 0 or pallets > 33):
+            raise serializers.ValidationError({"capacity_pallets": "Місткість палет зазвичай від 1 до 33."})
 
         return attrs
